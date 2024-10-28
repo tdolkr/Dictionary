@@ -4,11 +4,11 @@ import 'package:flutter/services.dart';
 import 'services/database_helper.dart';
 
 void main() {
-  runApp(DictionaryApp());
+  runApp(const DictionaryApp());
 }
 
 class DictionaryApp extends StatelessWidget {
-  const DictionaryApp({Key? key}) : super(key: key);
+  const DictionaryApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -33,6 +33,8 @@ class Definition {
 }
 
 class DictionaryHomePage extends StatefulWidget {
+  const DictionaryHomePage({super.key});
+
   @override
   _DictionaryHomePageState createState() => _DictionaryHomePageState();
 }
@@ -134,10 +136,10 @@ class _DictionaryHomePageState extends State<DictionaryHomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Dzongkha-English Dictionary'),
+        title: const Text('Dzongkha-English Dictionary'),
         actions: [
           IconButton(
-            icon: Icon(Icons.history),
+            icon: const Icon(Icons.history),
             onPressed: () {
               Navigator.push(
                 context,
@@ -146,7 +148,7 @@ class _DictionaryHomePageState extends State<DictionaryHomePage> {
             },
           ),
           IconButton(
-            icon: Icon(Icons.favorite),
+            icon: const Icon(Icons.favorite),
             onPressed: () {
               Navigator.push(
                 context,
@@ -177,27 +179,27 @@ class _DictionaryHomePageState extends State<DictionaryHomePage> {
                     ),
                   ),
                 ),
-                SizedBox(width: 8), // Add some space between the TextField and the button
+                const SizedBox(width: 8), // Add some space between the TextField and the button
                 ElevatedButton(
                   onPressed: searchWord,
-                  child: Icon(Icons.search),
                   style: ElevatedButton.styleFrom(
-                    padding: EdgeInsets.symmetric(horizontal: 16), // Adjust padding if needed
+                    padding: const EdgeInsets.symmetric(horizontal: 16), // Adjust padding if needed
                   ),
+                  child: Icon(Icons.search),
                 ),
               ],
             ),
-            SizedBox(height: 20),
+            const SizedBox(height: 20),
             if (resultEnDz.keyword.isNotEmpty)
               _buildDefinitionCard(resultEnDz, 'English -> Dzongkha'),
-            SizedBox(height: 10),
+            const SizedBox(height: 10),
             if (resultDzEn.keyword.isNotEmpty)
               _buildDefinitionCard(resultDzEn, 'Dzongkha -> English'),
             if (resultEnDz.keyword.isNotEmpty || resultDzEn.keyword.isNotEmpty)
               IconButton(
                 icon: favorites.contains(searchQuery)
-                    ? Icon(Icons.favorite, color: Colors.red)
-                    : Icon(Icons.favorite_border),
+                    ? const Icon(Icons.favorite, color: Colors.red)
+                    : const Icon(Icons.favorite_border),
                 onPressed: () => toggleFavorite(searchQuery),
               ),
           ],
@@ -219,15 +221,15 @@ class _DictionaryHomePageState extends State<DictionaryHomePage> {
         children: [
           Text(
             title,
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blueGrey),
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blueGrey),
           ),
-          SizedBox(height: 10),
+          const SizedBox(height: 10),
           RichText(
             text: TextSpan(
               children: [
                 TextSpan(
                   text: definition.keyword,
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 22, // Larger font for keyword
                     color: Colors.black87,
@@ -235,14 +237,14 @@ class _DictionaryHomePageState extends State<DictionaryHomePage> {
                 ),
                 TextSpan(
                   text: '\n${definition.definition} ',
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 16, // Regular font for definition
                     color: Colors.black54,
                   ),
                 ),
                 TextSpan(
                   text: definition.italicized.isNotEmpty ? '\n(${definition.italicized})' : '',
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontWeight: FontWeight.w500, // Medium bold for italicized text
                     fontStyle: FontStyle.italic,
                     fontSize: 16,
@@ -261,12 +263,12 @@ class _DictionaryHomePageState extends State<DictionaryHomePage> {
 class HistoryPage extends StatelessWidget {
   final List<String> searchHistory;
 
-  HistoryPage(this.searchHistory);
+  const HistoryPage(this.searchHistory, {super.key});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Search History')),
+      appBar: AppBar(title: const Text('Search History')),
       body: ListView.builder(
         itemCount: searchHistory.length,
         itemBuilder: (context, index) {
@@ -282,12 +284,12 @@ class HistoryPage extends StatelessWidget {
 class FavoritesPage extends StatelessWidget {
   final List<String> favorites;
 
-  FavoritesPage(this.favorites);
+  const FavoritesPage(this.favorites, {super.key});
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Favorites')),
+      appBar: AppBar(title: const Text('Favorites')),
       body: ListView.builder(
         itemCount: favorites.length,
         itemBuilder: (context, index) {
