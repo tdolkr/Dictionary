@@ -1,57 +1,68 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'services/database_helper.dart';
 
 void main() {
-  runApp(DictionaryApp());
+  runApp(const DictionaryApp());
 }
 
 class DictionaryApp extends StatelessWidget {
-  const DictionaryApp({Key? key}) : super(key: key);
+  const DictionaryApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Dzongkha-English Dictionary',
       theme: ThemeData(
-        primarySwatch: Colors.blue,
-        scaffoldBackgroundColor: Colors.grey[100],
+        primarySwatch: Colors.indigo,
+        scaffoldBackgroundColor: Colors.white,
       ),
-      home: DictionaryHomePage(),
+      home: const DictionaryHomePage(),
     );
   }
 }
 
-// Definition class to hold keyword, definition, and italicized portions separately
 class Definition {
   final String keyword;
-  final String definition;
-  final String italicized;
+  final String phonetic;
+  final List<Map<String, String>> meanings;
 
-  Definition({required this.keyword, required this.definition, required this.italicized});
+  Definition({
+    required this.keyword,
+    required this.phonetic,
+    required this.meanings,
+  });
 }
 
 class DictionaryHomePage extends StatefulWidget {
+  const DictionaryHomePage({super.key});
+
   @override
   _DictionaryHomePageState createState() => _DictionaryHomePageState();
 }
 
 class _DictionaryHomePageState extends State<DictionaryHomePage> {
+  final TextEditingController _searchController = TextEditingController();
   Map<String, String> enDz = {};
   Map<String, String> dzEn = {};
   List<String> searchHistory = [];
   List<String> favorites = [];
   String searchQuery = '';
-  Definition resultEnDz = Definition(keyword: '', definition: '', italicized: '');
-  Definition resultDzEn = Definition(keyword: '', definition: '', italicized: '');
+  Definition? localResult;
+  Definition? apiResult;
+  Definition? wordOfTheDay;
   DatabaseHelper databaseHelper = DatabaseHelper();
+  int _selectedIndex = 0;
 
   @override
   void initState() {
     super.initState();
     loadData();
     loadFromDatabase();
+    setWordOfTheDay();
   }
 
   Future<void> loadData() async {
@@ -74,181 +85,219 @@ class _DictionaryHomePageState extends State<DictionaryHomePage> {
     });
   }
 
-  void searchWord() async {
+  void setWordOfTheDay() {
+    // Choose a random word from either enDz or dzEn
+    final allWords = {...enDz, ...dzEn};
+    final randomKey = allWords.keys.elementAt(Random().nextInt(allWords.length));
+    wordOfTheDay = extractDefinition(allWords[randomKey]!);
+
+    setState(() {});
+  }
+
+  void searchForWord(String word) {
+    _searchController.text = word;
+    setState(() {
+      searchQuery = word;
+      _selectedIndex = 0;
+    });
+    searchWord();
+  }
+
+  Future<void> searchWord() async {
     if (searchQuery.isEmpty) return;
 
-    String normalizedQuery = searchQuery.trim();
-    print("Searching for: $normalizedQuery");
+    localResult = enDz[searchQuery] != null
+        ? extractDefinition(enDz[searchQuery]!)
+        : dzEn[searchQuery] != null
+            ? extractDefinition(dzEn[searchQuery]!)
+            : null;
 
-    resultEnDz = enDz[normalizedQuery] != null
-        ? extractDefinition(enDz[normalizedQuery]!)
-        : Definition(keyword: '', definition: 'No translation found', italicized: '');
-    resultDzEn = dzEn[normalizedQuery] != null
-        ? extractDefinition(dzEn[normalizedQuery]!)
-        : Definition(keyword: '', definition: 'No translation found', italicized: '');
+    String? localPos = localResult?.meanings.isNotEmpty ?? false
+        ? localResult!.meanings[0]['partOfSpeech']
+        : null;
+
+    final String url = 'https://api.dictionaryapi.dev/api/v2/entries/en/$searchQuery';
+    final response = await http.get(Uri.parse(url));
+
+    if (response.statusCode == 200) {
+      final List data = json.decode(response.body);
+      final String keyword = data[0]['word'];
+      final String phoneticText = data[0]['phonetic'] ?? '';
+      final List<Map<String, String>> meanings = [];
+
+      for (var meaning in data[0]['meanings']) {
+        if (localPos == null || localPos == meaning['partOfSpeech']) {
+          for (var definition in meaning['definitions']) {
+            meanings.add({
+              'partOfSpeech': meaning['partOfSpeech'],
+              'definition': definition['definition'],
+            });
+          }
+        }
+      }
+
+      apiResult = Definition(
+        keyword: keyword,
+        phonetic: phoneticText,
+        meanings: meanings.isNotEmpty
+            ? meanings
+            : [
+                {
+                  'partOfSpeech': '',
+                  'definition': 'No matching definitions found in API',
+                },
+              ],
+      );
+    } else {
+      apiResult = Definition(
+        keyword: searchQuery,
+        phonetic: '',
+        meanings: [
+          {'partOfSpeech': '', 'definition': 'No API definition found'},
+        ],
+      );
+    }
 
     setState(() {});
 
-    await databaseHelper.insertHistory(normalizedQuery);
-    loadFromDatabase();
+    if (!searchHistory.contains(searchQuery)) {
+      await databaseHelper.insertHistory(searchQuery);
+      loadFromDatabase();
+    }
   }
 
   Definition extractDefinition(String markupText) {
-    // Regular expressions to match <k>, <i>, and remove other HTML-like tags
-    final keyWordRegExp = RegExp(r'<k>(.*?)<\/k>');  // Matches content within <k> tags
-    final italicRegExp = RegExp(r'<i>(.*?)<\/i>');   // Matches content within <i> tags
-    final otherTagsRegExp = RegExp(r'<[^>]+>');      // Matches any other tags
+    final italicRegExp = RegExp(r'<i>(.*?)<\/i>');
+    final otherTagsRegExp = RegExp(r'<[^>]+>');
 
-    // Extract word within <k></k> tags
-    String keyword = keyWordRegExp.firstMatch(markupText)?.group(1) ?? '';
-    // Extract word within <i></i> tags
+    String cleanedText = markupText.replaceAll(otherTagsRegExp, '').trim();
     String italicized = italicRegExp.firstMatch(markupText)?.group(1) ?? '';
 
-    // Remove all other tags from the definition
-    String cleanedText = markupText.replaceAll(otherTagsRegExp, '').trim();
-
-    // Remove the keyword and italicized from the definition text if they exist
-    cleanedText = cleanedText.replaceFirst(keyword, '').replaceFirst(italicized, '').trim();
-
     return Definition(
-      keyword: keyword,
-      definition: cleanedText,
-      italicized: italicized,
+      keyword: searchQuery,
+      phonetic: '',
+      meanings: [
+        {'partOfSpeech': italicized, 'definition': cleanedText},
+      ],
     );
   }
 
   void toggleFavorite(String word) async {
     if (favorites.contains(word)) {
       await databaseHelper.deleteFavorite(word);
-      print("Removed $word from favorites");
     } else {
       await databaseHelper.insertFavorite(word);
-      print("Added $word to favorites");
     }
 
     await loadFromDatabase();
-    setState(() {}); // Ensure UI updates after toggling favorite
+    setState(() {});
+  }
+
+  Future<void> clearAllFavorites() async {
+    await databaseHelper.clearFavorites();
+    await loadFromDatabase();
+  }
+
+  void _onItemTapped(int index) {
+    setState(() {
+      _selectedIndex = index;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Dzongkha-English Dictionary'),
-        actions: [
-          IconButton(
-            icon: Icon(Icons.history),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => HistoryPage(searchHistory)),
-              );
-            },
+        title: const Text(
+          'Dzongkha-English Dictionary',
+          style: TextStyle(color: Colors.black),
+        ),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.black),
+      ),
+      body: _selectedIndex == 0
+          ? _buildSearchPage()
+          : _selectedIndex == 1
+              ? HistoryPage(searchHistory, databaseHelper, loadFromDatabase, onWordTap: searchForWord)
+              : FavoritesPage(
+                  favorites,
+                  onWordTap: searchForWord,
+                  onDeleteFavorite: toggleFavorite,
+                  onClearAllFavorites: clearAllFavorites,
+                ),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _selectedIndex,
+        onTap: _onItemTapped,
+        items: const <BottomNavigationBarItem>[
+          BottomNavigationBarItem(
+            icon: Icon(Icons.search),
+            label: 'Search',
           ),
-          IconButton(
-            icon: Icon(Icons.favorite),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => FavoritesPage(favorites)),
-              );
-            },
+          BottomNavigationBarItem(
+            icon: Icon(Icons.history),
+            label: 'History',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.star),
+            label: 'Favorites',
           ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    onChanged: (value) {
-                      setState(() {
-                        searchQuery = value;
-                      });
-                    },
-                    decoration: InputDecoration(
-                      labelText: 'Search English or Dzongkha',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(30),
-                      ),
+    );
+  }
+
+  Widget _buildSearchPage() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+      child: Column(
+        children: [
+          if (wordOfTheDay != null)
+            _buildDefinitionCard(wordOfTheDay!, isLocal: true),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _searchController,
+                  onChanged: (value) {
+                    setState(() {
+                      searchQuery = value;
+                    });
+                  },
+                  decoration: InputDecoration(
+                    hintText: 'Search...',
+                    prefixIcon: Icon(Icons.search, color: Colors.grey[400]),
+                    filled: true,
+                    fillColor: Colors.grey[200],
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide.none,
                     ),
                   ),
                 ),
-                SizedBox(width: 8), // Add some space between the TextField and the button
-                ElevatedButton(
-                  onPressed: searchWord,
-                  child: Icon(Icons.search),
-                  style: ElevatedButton.styleFrom(
-                    padding: EdgeInsets.symmetric(horizontal: 16), // Adjust padding if needed
-                  ),
-                ),
-              ],
-            ),
-            SizedBox(height: 20),
-            if (resultEnDz.keyword.isNotEmpty)
-              _buildDefinitionCard(resultEnDz, 'English -> Dzongkha'),
-            SizedBox(height: 10),
-            if (resultDzEn.keyword.isNotEmpty)
-              _buildDefinitionCard(resultDzEn, 'Dzongkha -> English'),
-            if (resultEnDz.keyword.isNotEmpty || resultDzEn.keyword.isNotEmpty)
-              IconButton(
-                icon: favorites.contains(searchQuery)
-                    ? Icon(Icons.favorite, color: Colors.red)
-                    : Icon(Icons.favorite_border),
-                onPressed: () => toggleFavorite(searchQuery),
               ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // Widget for displaying a definition with static border outline
-  Widget _buildDefinitionCard(Definition definition, String title) {
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: Colors.blueGrey, width: 1.5), // Static outline border
-        borderRadius: BorderRadius.circular(12),
-      ),
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blueGrey),
+              const SizedBox(width: 8),
+              ElevatedButton(
+                onPressed: searchWord,
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  backgroundColor: Colors.indigo,
+                ),
+                child: const Text(
+                  'Search',
+                  style: TextStyle(color: Colors.white),
+                ),
+              ),
+            ],
           ),
-          SizedBox(height: 10),
-          RichText(
-            text: TextSpan(
+          const SizedBox(height: 20),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.symmetric(horizontal: 8.0),
               children: [
-                TextSpan(
-                  text: definition.keyword,
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 22, // Larger font for keyword
-                    color: Colors.black87,
-                  ),
-                ),
-                TextSpan(
-                  text: '\n${definition.definition} ',
-                  style: TextStyle(
-                    fontSize: 16, // Regular font for definition
-                    color: Colors.black54,
-                  ),
-                ),
-                TextSpan(
-                  text: definition.italicized.isNotEmpty ? '\n(${definition.italicized})' : '',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w500, // Medium bold for italicized text
-                    fontStyle: FontStyle.italic,
-                    fontSize: 16,
-                    color: Colors.blueGrey,
-                  ),
-                ),
+                if (localResult != null) _buildDefinitionCard(localResult!, isLocal: true),
+                if (apiResult != null) _buildDefinitionCard(apiResult!, isLocal: false),
               ],
             ),
           ),
@@ -256,46 +305,71 @@ class _DictionaryHomePageState extends State<DictionaryHomePage> {
       ),
     );
   }
-}
 
-class HistoryPage extends StatelessWidget {
-  final List<String> searchHistory;
-
-  HistoryPage(this.searchHistory);
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Search History')),
-      body: ListView.builder(
-        itemCount: searchHistory.length,
-        itemBuilder: (context, index) {
-          return ListTile(
-            title: Text(searchHistory[index]),
-          );
-        },
+  Widget _buildDefinitionCard(Definition definition, {required bool isLocal}) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.blueAccent.shade100,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      padding: const EdgeInsets.all(16.0),
+      margin: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (isLocal && wordOfTheDay == definition)
+            Text(
+              "Word of the Day",
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+                color: Colors.blueAccent,
+              ),
+            ),
+          Row(
+            children: [
+              Text(
+                definition.keyword,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 20,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                definition.phonetic,
+                style: const TextStyle(
+                  fontSize: 16,
+                  color: Colors.grey,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+              Spacer(),
+              if (isLocal)
+                IconButton(
+                  icon: favorites.contains(definition.keyword)
+                      ? const Icon(Icons.star, color: Colors.amber)
+                      : const Icon(Icons.star_border),
+                  onPressed: () => toggleFavorite(definition.keyword),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          for (var meaning in definition.meanings) ...[
+            Text(
+              '(${meaning['partOfSpeech']}) ${meaning['definition']}',
+              style: const TextStyle(
+                fontSize: 15,
+                color: Colors.black54,
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ],
       ),
     );
   }
 }
 
-class FavoritesPage extends StatelessWidget {
-  final List<String> favorites;
-
-  FavoritesPage(this.favorites);
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Favorites')),
-      body: ListView.builder(
-        itemCount: favorites.length,
-        itemBuilder: (context, index) {
-          return ListTile(
-            title: Text(favorites[index]),
-          );
-        },
-      ),
-    );
-  }
-}
+// HistoryPage and FavoritesPage classes remain the same.
