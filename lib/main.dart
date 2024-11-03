@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'dart:convert';
-import 'dart:math';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'services/database_helper.dart';
@@ -53,7 +52,6 @@ class _DictionaryHomePageState extends State<DictionaryHomePage> {
   String searchQuery = '';
   Definition? localResult;
   Definition? apiResult;
-  Definition? wordOfTheDay;
   DatabaseHelper databaseHelper = DatabaseHelper();
   int _selectedIndex = 0;
 
@@ -62,7 +60,6 @@ class _DictionaryHomePageState extends State<DictionaryHomePage> {
     super.initState();
     loadData();
     loadFromDatabase();
-    setWordOfTheDay();
   }
 
   Future<void> loadData() async {
@@ -83,15 +80,6 @@ class _DictionaryHomePageState extends State<DictionaryHomePage> {
       favorites = favs;
       searchHistory = history;
     });
-  }
-
-  void setWordOfTheDay() {
-    // Choose a random word from either enDz or dzEn
-    final allWords = {...enDz, ...dzEn};
-    final randomKey = allWords.keys.elementAt(Random().nextInt(allWords.length));
-    wordOfTheDay = extractDefinition(allWords[randomKey]!);
-
-    setState(() {});
   }
 
   void searchForWord(String word) {
@@ -252,9 +240,6 @@ class _DictionaryHomePageState extends State<DictionaryHomePage> {
       padding: const EdgeInsets.symmetric(horizontal: 16.0),
       child: Column(
         children: [
-          if (wordOfTheDay != null)
-            _buildDefinitionCard(wordOfTheDay!, isLocal: true),
-          const SizedBox(height: 20),
           Row(
             children: [
               Expanded(
@@ -309,7 +294,7 @@ class _DictionaryHomePageState extends State<DictionaryHomePage> {
   Widget _buildDefinitionCard(Definition definition, {required bool isLocal}) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.blueAccent.shade100,
+        color: Colors.grey[100],
         borderRadius: BorderRadius.circular(8),
       ),
       padding: const EdgeInsets.all(16.0),
@@ -317,15 +302,6 @@ class _DictionaryHomePageState extends State<DictionaryHomePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (isLocal && wordOfTheDay == definition)
-            Text(
-              "Word of the Day",
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 18,
-                color: Colors.blueAccent,
-              ),
-            ),
           Row(
             children: [
               Text(
@@ -372,4 +348,113 @@ class _DictionaryHomePageState extends State<DictionaryHomePage> {
   }
 }
 
-// HistoryPage and FavoritesPage classes remain the same.
+class HistoryPage extends StatelessWidget {
+  final List<String> searchHistory;
+  final DatabaseHelper databaseHelper;
+  final Function reloadHistory;
+  final Function(String) onWordTap;
+
+  const HistoryPage(this.searchHistory, this.databaseHelper, this.reloadHistory, {super.key, required this.onWordTap});
+
+  Future<void> deleteHistoryItem(String word, Function callback) async {
+    await databaseHelper.deleteHistory(word);
+    callback();
+  }
+
+  Future<void> clearAllHistory(Function callback) async {
+    await databaseHelper.clearHistory();
+    callback();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: TextButton(
+            onPressed: () => clearAllHistory(reloadHistory),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.redAccent,
+            ),
+            child: const Text('Clear All History'),
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            itemCount: searchHistory.length,
+            itemBuilder: (context, index) {
+              return ListTile(
+                title: Text(searchHistory[index]),
+                onTap: () {
+                  onWordTap(searchHistory[index]);
+                },
+                trailing: IconButton(
+                  icon: Icon(Icons.close, color: Colors.redAccent),
+                  onPressed: () {
+                    deleteHistoryItem(searchHistory[index], () {
+                      searchHistory.removeAt(index);
+                      reloadHistory();
+                    });
+                  },
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class FavoritesPage extends StatelessWidget {
+  final List<String> favorites;
+  final Function(String) onWordTap;
+  final Function(String) onDeleteFavorite;
+  final Function onClearAllFavorites;
+
+  const FavoritesPage(
+    this.favorites, {
+    super.key,
+    required this.onWordTap,
+    required this.onDeleteFavorite,
+    required this.onClearAllFavorites,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: TextButton(
+            onPressed: () => onClearAllFavorites(),
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.redAccent,
+            ),
+            child: const Text('Clear All Favorites'),
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            itemCount: favorites.length,
+            itemBuilder: (context, index) {
+              return ListTile(
+                title: Text(favorites[index]),
+                onTap: () {
+                  onWordTap(favorites[index]);
+                },
+                trailing: IconButton(
+                  icon: Icon(Icons.close, color: Colors.redAccent), // Changed to cross icon
+                  onPressed: () {
+                    onDeleteFavorite(favorites[index]);
+                  },
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
