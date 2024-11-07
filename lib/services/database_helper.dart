@@ -37,7 +37,7 @@ class DatabaseHelper {
     await db.execute('''
       CREATE TABLE history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        word TEXT
+        word TEXT UNIQUE
       )
     ''');
   }
@@ -52,12 +52,24 @@ class DatabaseHelper {
   }
 
   Future<void> insertHistory(String word) async {
+    if (word.trim().isEmpty) return; // Ignore blank searches
+
     final db = await database;
-    await db.insert(
+
+    // Check if the word already exists in history
+    final existingWord = await db.query(
       'history',
-      {'word': word},
-      conflictAlgorithm: ConflictAlgorithm.replace,
+      where: 'word = ?',
+      whereArgs: [word],
     );
+
+    if (existingWord.isEmpty) {
+      await db.insert(
+        'history',
+        {'word': word},
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
   }
 
   Future<List<String>> getFavorites() async {
@@ -71,7 +83,12 @@ class DatabaseHelper {
 
   Future<List<String>> getHistory() async {
     final db = await database;
-    final List<Map<String, dynamic>> maps = await db.query('history');
+    final List<Map<String, dynamic>> maps = await db.query(
+      'history',
+      distinct: true,
+      where: 'word IS NOT NULL AND word != ""',
+      orderBy: 'id DESC', // Optional: Sort by latest search first
+    );
 
     return List.generate(maps.length, (i) {
       return maps[i]['word'];
@@ -83,8 +100,18 @@ class DatabaseHelper {
     await db.delete('favorites', where: 'word = ?', whereArgs: [word]);
   }
 
+  Future<void> deleteHistory(String word) async {
+    final db = await database;
+    await db.delete('history', where: 'word = ?', whereArgs: [word]);
+  }
+
   Future<void> clearHistory() async {
     final db = await database;
     await db.delete('history');
+  }
+
+  Future<void> clearFavorites() async {
+    final db = await database;
+    await db.delete('favorites');
   }
 }
