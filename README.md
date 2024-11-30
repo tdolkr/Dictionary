@@ -52,5 +52,3 @@ How to Search:
 •	Dark Mode changes the app’s background to a darker color scheme, ideal for low-light conditions.
 •	Light Mode provides a brighter display, suitable for daytime use.
  
-
-![image](https://github.com/user-attachments/assets/911fa601-c5a0-4f17-99a7-7047c1dd81f9)
